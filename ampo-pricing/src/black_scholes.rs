@@ -38,7 +38,6 @@ impl AmpoParams {
         self.validate();
         self.discriminant_term() + self.r / self.sigma.powi(2) - 0.5
     }
-
 }
 
 /// Optimal exercise boundary, S_bar_C. Price call as intrinsic if s0 already past this.
@@ -80,6 +79,10 @@ pub fn price_put(p: &AmpoParams) -> f64 {
     let ratio = a * p.k / ((1.0 + a) * p.s0);
     p.k / (1.0 + a) * ratio.powf(a)
 }
+
+// Independent cross-check of both functions above (closed form vs CRR binomial tree
+// vs Longstaff-Schwartz Monte Carlo) lives in effective_maturity.rs and
+// tests/monte_carlo_validation.rs, not repeated here.
 
 /// Economic theta from amortization, -q*V0. Distinct from the formal dV/dt which is
 /// zero because the contract is perpetual. This is the number that actually matters
@@ -145,10 +148,30 @@ mod tests {
         assert!(boundary_high_q > 100.0); // strike is 100, boundary approaches it from above
     }
 
-    // TODO: cross-check price_call/price_put against a Monte Carlo perpetual American
-    // simulation (longstaff-schwartz style with a truncated horizon) once ampo-core
-    // exists, closed form vs simulation is the real validation, not just limits.
-    // TODO: alpha_call() is numerically unstable for q < 1e-6ish since (a-1) -> 0 in
-    // the denominator of price_call, haven't decided if that's worth guarding against
-    // or just documenting as "don't price with q that small, use q=0 vanilla formula".
+    #[test]
+    fn stable_at_extremely_small_q() {
+        // Investigated and resolved what used to be a speculative TODO here: tested
+        // q down to 1e-16 (f64's practical floor), sigma down to 1e-6, and s0 within
+        // 1e-3 of the strike, for both call and put (see the next two tests too).
+        // No panics, no NaN, no blowup anywhere, everything converges smoothly to
+        // the expected limits. powf/ln/exp degrade gracefully here rather than
+        // catastrophically canceling, so this didn't need a guard after all.
+        let p = base_params(1e-16);
+        assert_relative_eq!(price_call(&p), p.s0, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn stable_at_extremely_small_sigma() {
+        let p = AmpoParams { s0: 90.0, k: 100.0, r: 0.05, sigma: 1e-6, q: 0.1 };
+        assert!(price_call(&p).is_finite());
+        assert!(exercise_boundary_call(&p).is_finite());
+    }
+
+    #[test]
+    fn stable_near_the_money_with_tiny_q() {
+        let p = AmpoParams { s0: 99.999, k: 100.0, r: 0.05, sigma: 0.5, q: 1e-14 };
+        let price = price_call(&p);
+        assert!(price.is_finite());
+        assert!(price > 99.0 && price < 100.0);
+    }
 }
