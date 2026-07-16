@@ -1,4 +1,4 @@
-# ampo-pricing-engine-rs
+# ampo-pricing-engine
 
 Reference implementation of **Amortizing Perpetual Options (AmPOs)**: options with
 exponentially decaying notional and no fixed expiry, priced in closed form and
@@ -60,17 +60,32 @@ formula, verified independently in Python first).
 ### Known limitation: LSM low bias on calls
 
 The Longstaff-Schwartz cross-check in `monte_carlo_validation.rs` has a genuine,
-diagnosed ~3-7% low bias specifically on calls, confirmed to be neither a
-discretization artifact (doesn't shrink from 200 to 2000 time steps) nor a
-path-simulation bug (an isolated European-only simulation matches its closed-form
-reference tightly). It's the standard regression-based LSM exercise policy being
-measurably suboptimal when almost all of an option's value comes from near-immediate
-exercise, which is exactly the regime these examples are in (effective maturity
-~1.3y against a 10y simulation horizon). The CRR binomial tree in
-`effective_maturity.rs` doesn't have this problem (exact backward induction, no
-regression) and is the trustworthy independent check for the call boundary. The MC
-test tolerances are set from the empirically measured bias, not picked to force a
-pass, see the module doc comment for the full diagnostic trail.
+diagnosed ~3-7% low bias specifically on calls. Investigated across three
+independent axes before accepting this as a structural limitation rather than a
+bug: time discretization (200→2000 steps, unchanged), regression basis
+(degree 2→5, unchanged, no trend), and simulation horizon (T=10→80y with dt held
+fixed, plateaus around 3-4%, doesn't converge to zero). A parallel isolated check
+(European-only pricing, no exercise decision) matches its independently-computed
+reference tightly, ruling out a path-simulation bug. What's left is the standard
+regression-based LSM exercise policy being a well-documented biased-low estimator,
+worst when almost all of an option's value comes from near-immediate exercise
+(which is exactly this regime: large q makes early exercise dominant). Closing
+this for real needs a different method (e.g. Andersen-Broadie primal-dual bounds),
+which is a bigger undertaking than a cross-check module warrants. The CRR binomial
+tree in `effective_maturity.rs` doesn't have this problem (exact backward
+induction, no regression) and is the trustworthy independent check for the call
+boundary. Tolerances are set from the measured bias, not picked to force a pass.
+Full diagnostic trail reproducible via `cargo test -- --ignored --nocapture`.
+
+### Numerical stability at extreme parameters: investigated, not an issue
+
+Initially flagged as a TODO (denominator `alpha_C - 1 -> 0` as `q -> 0` looked like
+a plausible catastrophic-cancellation risk). Tested directly: `q` down to `1e-16`
+(f64's practical floor), `sigma` down to `1e-6`, `s0` within `1e-3` of the strike,
+both option types. No panics, no NaN, no blowup anywhere, everything converges
+smoothly to the expected limits. `powf`/`ln`/`exp` evidently degrade gracefully
+here. Kept as regression tests in `black_scholes.rs` rather than as a lingering
+unresolved TODO.
 
 ## Running
 
@@ -78,7 +93,7 @@ pass, see the module doc comment for the full diagnostic trail.
 cargo test --workspace --release
 ```
 
-57 unit tests, 3 integration tests, 1 ignored diagnostic test (run with
+63 unit tests, 3 integration tests, 1 ignored diagnostic test (run with
 `cargo test -- --ignored --nocapture` to see the bias diagnosis reproduced).
 The Monte Carlo tests are meaningfully slower than the rest (~5-10s), hence
 `--release`.
