@@ -1,0 +1,10 @@
+[package]
+name = "ampo-applications"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ampo-core = { path = "../ampo-core" }
+
+[dev-dependencies]
+approx = "0.5"
