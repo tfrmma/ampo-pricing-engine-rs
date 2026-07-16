@@ -72,14 +72,6 @@ regression) and is the trustworthy independent check for the call boundary. The 
 test tolerances are set from the empirically measured bias, not picked to force a
 pass, see the module doc comment for the full diagnostic trail.
 
-### Toolchain note
-
-This was built against rustc/cargo 1.75 (Ubuntu apt default). `proptest`'s current
-release pulls a `getrandom` version requiring `edition2024` (cargo 1.85+), which
-doesn't resolve here, so `ampo-core/invariants.rs` uses a hand-rolled xorshift64 PRNG
-instead of `proptest`. Functionally equivalent for this use case, but doesn't get
-proptest's shrinking on failure. Worth revisiting with a current toolchain.
-
 ## Running
 
 ```
