@@ -4,11 +4,7 @@
 //! there, Cor 3.11). These aren't things we're hoping are true, the paper has proofs
 //! for both, so a failing test here means a bug in delta_phi or in how operations.rs
 //! composes with market.rs, not a gap in the underlying math.
-//!
-//! Would normally reach for proptest here, but it pulls a getrandom version that
-//! requires edition2024 (cargo 1.85+), and this box only has rustc/cargo 1.75 via
-//! apt. Hand-rolled xorshift64 instead, deterministic seed so failures reproduce.
-//! TODO: swap this for real proptest (with shrinking) once the toolchain is current.
+
 
 #[cfg(test)]
 mod tests {
