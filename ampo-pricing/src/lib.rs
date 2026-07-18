@@ -4,5 +4,5 @@ pub mod effective_maturity;
 pub mod greeks;
 
 pub use black_scholes::{
-    price_call, price_put, exercise_boundary_call, exercise_boundary_put, AmpoParams,
+    exercise_boundary_call, exercise_boundary_put, price_call, price_put, AmpoParams,
 };
