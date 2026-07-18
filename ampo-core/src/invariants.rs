@@ -5,11 +5,12 @@
 //! for both, so a failing test here means a bug in delta_phi or in how operations.rs
 //! composes with market.rs, not a gap in the underlying math.
 
-
 #[cfg(test)]
 mod tests {
     use crate::market::{total_premium, MarketState};
-    use crate::operations::{amortization_yield, buy_to_close, buy_to_open, sell_to_close, sell_to_open};
+    use crate::operations::{
+        amortization_yield, buy_to_close, buy_to_open, sell_to_close, sell_to_open,
+    };
     use crate::premium_curve::CallPremiumCurve;
 
     struct Xorshift64(u64);
@@ -58,30 +59,59 @@ mod tests {
     /// X<=C or go negative. Utilization is capped short of 1.0 on buys, the call
     /// curve's premium genuinely diverges there and near-infinite premiums would
     /// swamp the final equality check with floating point noise.
-    fn apply(curve: &CallPremiumCurve, state: MarketState, reserves: f64, action: &Action) -> (MarketState, f64) {
+    fn apply(
+        curve: &CallPremiumCurve,
+        state: MarketState,
+        reserves: f64,
+        action: &Action,
+    ) -> (MarketState, f64) {
         const Q: f64 = 0.1;
         match *action {
             Action::Deposit(raw) => {
                 let c = raw.max(0.0);
                 let delta = sell_to_open(curve, state, c);
-                (MarketState { x: state.x, c: state.c + c }, reserves + delta)
+                (
+                    MarketState {
+                        x: state.x,
+                        c: state.c + c,
+                    },
+                    reserves + delta,
+                )
             }
             Action::Withdraw(raw) => {
                 let max_withdraw = (state.c - state.x / 0.95).max(0.0);
                 let c = raw.min(max_withdraw).max(0.0);
                 let delta = buy_to_close(curve, state, c);
-                (MarketState { x: state.x, c: state.c - c }, reserves + delta)
+                (
+                    MarketState {
+                        x: state.x,
+                        c: state.c - c,
+                    },
+                    reserves + delta,
+                )
             }
             Action::Buy(raw) => {
                 let headroom = (state.c * 0.95 - state.x).max(0.0);
                 let x = raw.min(headroom).max(0.0);
                 let delta = buy_to_open(curve, state, x);
-                (MarketState { x: state.x + x, c: state.c }, reserves + delta)
+                (
+                    MarketState {
+                        x: state.x + x,
+                        c: state.c,
+                    },
+                    reserves + delta,
+                )
             }
             Action::Sell(raw) => {
                 let x = raw.min(state.x).max(0.0);
                 let delta = sell_to_close(curve, state, x);
-                (MarketState { x: state.x - x, c: state.c }, reserves + delta)
+                (
+                    MarketState {
+                        x: state.x - x,
+                        c: state.c,
+                    },
+                    reserves + delta,
+                )
             }
             Action::Amortize(elapsed) => {
                 if state.x == 0.0 {
@@ -89,7 +119,13 @@ mod tests {
                 }
                 let decayed = state.x * (1.0 - (-Q * elapsed).exp());
                 let delta = amortization_yield(curve, state, Q, elapsed);
-                (MarketState { x: state.x - decayed, c: state.c }, reserves + delta)
+                (
+                    MarketState {
+                        x: state.x - decayed,
+                        c: state.c,
+                    },
+                    reserves + delta,
+                )
             }
         }
     }
@@ -117,7 +153,12 @@ mod tests {
             reserves,
             phi_final
         );
-        assert!(reserves >= -1e-9, "seed {}: reserves went negative: {}", seed, reserves);
+        assert!(
+            reserves >= -1e-9,
+            "seed {}: reserves went negative: {}",
+            seed,
+            reserves
+        );
     }
 
     #[test]
