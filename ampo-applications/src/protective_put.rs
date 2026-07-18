@@ -44,14 +44,22 @@ impl ProtectivePutCollateral {
     /// guaranteed. Before this, the position is fully hedged; after, the collateral
     /// value decays exponentially with the option.
     pub fn full_protection_expiry(&self) -> f64 {
-        debug_assert!(self.alpha > 1.0, "alpha <= 1 means the position is never over-protected");
+        debug_assert!(
+            self.alpha > 1.0,
+            "alpha <= 1 means the position is never over-protected"
+        );
         self.alpha.ln() / self.q
     }
 }
 
 /// Loan-to-value at time t, given a debt balance that's grown from debt0 at
 /// continuously compounded rate debt_growth_rate. LTV = debt_t / collateral_value_t.
-pub fn loan_to_value(position: &ProtectivePutCollateral, debt0: f64, debt_growth_rate: f64, t: f64) -> f64 {
+pub fn loan_to_value(
+    position: &ProtectivePutCollateral,
+    debt0: f64,
+    debt_growth_rate: f64,
+    t: f64,
+) -> f64 {
     let debt_t = debt0 * (debt_growth_rate * t).exp();
     let collateral_t = position.collateral_value(t);
     debt_t / collateral_t
@@ -76,7 +84,12 @@ mod tests {
     use approx::assert_relative_eq;
 
     fn position() -> ProtectivePutCollateral {
-        ProtectivePutCollateral { e: 1.0, alpha: 1.2, k: 3000.0, q: 0.003 } // 30bps/day-ish
+        ProtectivePutCollateral {
+            e: 1.0,
+            alpha: 1.2,
+            k: 3000.0,
+            q: 0.003,
+        } // 30bps/day-ish
     }
 
     #[test]
@@ -92,7 +105,11 @@ mod tests {
         let t_expiry = p.full_protection_expiry();
         assert!(t_expiry > 0.0);
         // just before expiry, still fully protected.
-        assert_relative_eq!(p.collateral_value(t_expiry - 0.5), p.e * p.k, epsilon = 1e-6);
+        assert_relative_eq!(
+            p.collateral_value(t_expiry - 0.5),
+            p.e * p.k,
+            epsilon = 1e-6
+        );
         // well after, decaying below full value.
         assert!(p.collateral_value(t_expiry + 50.0) < p.e * p.k);
     }
