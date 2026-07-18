@@ -28,16 +28,14 @@ pub fn gamma_put(p: &AmpoParams) -> f64 {
 pub fn vega_call(p: &AmpoParams) -> f64 {
     let a = p.alpha_call();
     let c0 = crate::black_scholes::price_call(p);
-    4.0 * c0 / p.sigma * ((a - 1.0) * p.s0 / (a * p.k)).ln()
-        * ((a - 1.0) * p.r - p.q)
+    4.0 * c0 / p.sigma * ((a - 1.0) * p.s0 / (a * p.k)).ln() * ((a - 1.0) * p.r - p.q)
         / ((2.0 * a - 1.0) * p.sigma.powi(2) + 2.0 * p.r)
 }
 
 pub fn vega_put(p: &AmpoParams) -> f64 {
     let a = p.alpha_put();
     let p0 = crate::black_scholes::price_put(p);
-    4.0 * p0 / p.sigma * ((1.0 + a) * p.s0 / (a * p.k)).ln()
-        * ((1.0 + a) * p.r + p.q)
+    4.0 * p0 / p.sigma * ((1.0 + a) * p.s0 / (a * p.k)).ln() * ((1.0 + a) * p.r + p.q)
         / ((2.0 * a + 1.0) * p.sigma.powi(2) - 2.0 * p.r)
 }
 
@@ -48,11 +46,23 @@ mod tests {
     use approx::assert_relative_eq;
 
     fn call_params() -> AmpoParams {
-        AmpoParams { s0: 90.0, k: 100.0, r: 0.05, sigma: 0.5, q: 0.3 }
+        AmpoParams {
+            s0: 90.0,
+            k: 100.0,
+            r: 0.05,
+            sigma: 0.5,
+            q: 0.3,
+        }
     }
 
     fn put_params() -> AmpoParams {
-        AmpoParams { s0: 110.0, k: 100.0, r: 0.05, sigma: 0.5, q: 0.3 }
+        AmpoParams {
+            s0: 110.0,
+            k: 100.0,
+            r: 0.05,
+            sigma: 0.5,
+            q: 0.3,
+        }
     }
 
     #[test]
