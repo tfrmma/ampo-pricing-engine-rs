@@ -18,7 +18,10 @@ impl AmpoParams {
         debug_assert!(self.s0 > 0.0 && self.k > 0.0);
         debug_assert!(self.r >= 0.0);
         debug_assert!(self.sigma > 0.0);
-        debug_assert!(self.q > 0.0, "q must be > 0, use vanilla perpetual American pricing for q=0");
+        debug_assert!(
+            self.q > 0.0,
+            "q must be > 0, use vanilla perpetual American pricing for q=0"
+        );
     }
 
     fn discriminant_term(&self) -> f64 {
@@ -101,7 +104,13 @@ mod tests {
     use approx::assert_relative_eq;
 
     fn base_params(q: f64) -> AmpoParams {
-        AmpoParams { s0: 90.0, k: 100.0, r: 0.05, sigma: 0.5, q }
+        AmpoParams {
+            s0: 90.0,
+            k: 100.0,
+            r: 0.05,
+            sigma: 0.5,
+            q,
+        }
     }
 
     #[test]
@@ -162,14 +171,26 @@ mod tests {
 
     #[test]
     fn stable_at_extremely_small_sigma() {
-        let p = AmpoParams { s0: 90.0, k: 100.0, r: 0.05, sigma: 1e-6, q: 0.1 };
+        let p = AmpoParams {
+            s0: 90.0,
+            k: 100.0,
+            r: 0.05,
+            sigma: 1e-6,
+            q: 0.1,
+        };
         assert!(price_call(&p).is_finite());
         assert!(exercise_boundary_call(&p).is_finite());
     }
 
     #[test]
     fn stable_near_the_money_with_tiny_q() {
-        let p = AmpoParams { s0: 99.999, k: 100.0, r: 0.05, sigma: 0.5, q: 1e-14 };
+        let p = AmpoParams {
+            s0: 99.999,
+            k: 100.0,
+            r: 0.05,
+            sigma: 0.5,
+            q: 1e-14,
+        };
         let price = price_call(&p);
         assert!(price.is_finite());
         assert!(price > 99.0 && price < 100.0);
