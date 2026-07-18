@@ -7,3 +7,4 @@ edition = "2021"
 
 [dev-dependencies]
 approx = "0.5"
+ampo-pricing = { path = "../ampo-pricing" }
