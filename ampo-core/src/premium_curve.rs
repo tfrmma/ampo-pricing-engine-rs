@@ -18,7 +18,10 @@ pub struct CallPremiumCurve;
 
 impl PremiumFunction for CallPremiumCurve {
     fn premium(&self, u: f64) -> f64 {
-        debug_assert!((0.0..=1.0).contains(&u), "call utilization must be in [0,1]");
+        debug_assert!(
+            (0.0..=1.0).contains(&u),
+            "call utilization must be in [0,1]"
+        );
         if u >= 1.0 {
             return f64::INFINITY;
         }
