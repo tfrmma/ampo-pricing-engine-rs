@@ -11,7 +11,10 @@ use crate::premium_curve::PremiumFunction;
 
 /// Eq 3.1. The building block every operation below is defined in terms of.
 pub fn delta_phi(curve: &impl PremiumFunction, before: MarketState, dx: f64, dc: f64) -> f64 {
-    let after = MarketState { x: before.x + dx, c: before.c + dc };
+    let after = MarketState {
+        x: before.x + dx,
+        c: before.c + dc,
+    };
     total_premium(curve, after) - total_premium(curve, before)
 }
 
@@ -54,7 +57,12 @@ pub fn exercise_yield(curve: &impl PremiumFunction, state: MarketState, x: f64) 
 /// on an open interest of X at t0. Remark 8 in the design paper: this only actually
 /// gets computed lazily, on the next user interaction, but the yield itself is path
 /// independent in time so it doesn't matter how long it's been sitting uncomputed.
-pub fn amortization_yield(curve: &impl PremiumFunction, state: MarketState, q: f64, elapsed: f64) -> f64 {
+pub fn amortization_yield(
+    curve: &impl PremiumFunction,
+    state: MarketState,
+    q: f64,
+    elapsed: f64,
+) -> f64 {
     debug_assert!(q > 0.0 && elapsed >= 0.0);
     let decayed_fraction = 1.0 - (-q * elapsed).exp();
     delta_phi(curve, state, -decayed_fraction * state.x, 0.0)
@@ -103,7 +111,10 @@ mod tests {
         let curve = CallPremiumCurve;
         let state = MarketState { x: 10.0, c: 100.0 };
         let cost = buy_to_open(&curve, state, 15.0);
-        let after_buy = MarketState { x: state.x + 15.0, c: state.c };
+        let after_buy = MarketState {
+            x: state.x + 15.0,
+            c: state.c,
+        };
         let rebate = sell_to_close(&curve, after_buy, 15.0);
         assert!((cost + rebate).abs() < 1e-9);
     }
