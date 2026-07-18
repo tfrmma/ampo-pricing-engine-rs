@@ -64,11 +64,19 @@ mod tests {
     use approx::assert_relative_eq;
 
     fn call() -> AmpoContract {
-        AmpoContract { option_type: OptionType::Call, k: 100.0, q: 0.1 }
+        AmpoContract {
+            option_type: OptionType::Call,
+            k: 100.0,
+            q: 0.1,
+        }
     }
 
     fn put() -> AmpoContract {
-        AmpoContract { option_type: OptionType::Put, k: 100.0, q: 0.1 }
+        AmpoContract {
+            option_type: OptionType::Put,
+            k: 100.0,
+            q: 0.1,
+        }
     }
 
     #[test]
