@@ -28,20 +28,31 @@ ampo-pricing/        the instrument's fair value (2512.06505)
   comparative_statics.rs sensitivity to q itself (Cor 3.10, 3.11)
   effective_maturity.rs  CRR binomial tree + bisection, maps an AmPO to the
                          dated American option it's priced equivalent to
+  examples/price_and_risk.rs
+                         price, Greeks, comparative statics, effective maturity,
+                         and a q-sweep, all for one AmPO, printed side by side
   tests/monte_carlo_validation.rs
                          independent Longstaff-Schwartz cross-check, see below
 
 ampo-core/            the market mechanism (2605.19146, Section 3)
   payoff.rs              contract definition, notional decay, physical settlement
   premium_curve.rs       P(U), phi(U), the two worked examples from the paper
-  market.rs              total premium function Phi(X,C)
+  market.rs               total premium function Phi(X,C)
   operations.rs          the six market operations, all as delta_phi
   invariants.rs          fuzz-style tests of solvency and path independence
+  examples/market_lifecycle.rs
+                         one market's full lifecycle: deposit, open, amortize,
+                         exercise, withdraw, with reserves vs Phi(X,C) checked
+                         live at each step (also the one place that crosses into
+                         ampo-pricing, to show market premium vs fair value)
 
 ampo-applications/    two worked applications (2605.19146, Section 4)
   protective_put.rs      endogenous, oracle-free lending collateral
   depeg_insurance.rs     PSM-as-explicit-option
 ```
+
+CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy -D warnings`,
+and the full test suite on every push and PR.
 
 ## Status
 
@@ -51,11 +62,16 @@ thin wrapper reusing `ampo-core`, not new math.
 
 Every closed-form formula here was independently checked against finite differences
 (and, for pricing, against a CRR binomial tree and a Longstaff-Schwartz Monte Carlo)
-before being trusted. Two bugs were caught this way during development, not by
-inspection: a numerical instability at full utilization in `CallPremiumCurve` (fixed,
-regression test in `premium_curve.rs`), and a test-tolerance issue mistaken for a
-pricing bug in early `black_scholes.rs` development (fixed, was the test, not the
-formula, verified independently in Python first).
+before being trusted. Bugs caught this way during development, not by inspection: a
+numerical instability at full utilization in `CallPremiumCurve` (fixed, regression
+test in `premium_curve.rs`); the same full-utilization edge case resurfacing
+naturally in `examples/market_lifecycle.rs` when an underwriter withdraws all
+technically-available collateral (documented in the example rather than avoided);
+and a test-tolerance issue mistaken for a pricing bug in early `black_scholes.rs`
+development (fixed, was the test, not the formula, verified independently in Python
+first). Clippy also flagged two real `too_many_arguments` cases once CI was set up
+(`bisect_maturity`, `lsm_price`), both refactored into config structs rather than
+suppressed.
 
 ### Known limitation: LSM low bias on calls
 
@@ -91,6 +107,8 @@ unresolved TODO.
 
 ```
 cargo test --workspace --release
+cargo run --release --example market_lifecycle -p ampo-core
+cargo run --release --example price_and_risk -p ampo-pricing
 ```
 
 63 unit tests, 3 integration tests, 1 ignored diagnostic test (run with
