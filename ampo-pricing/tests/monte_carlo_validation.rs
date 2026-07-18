@@ -64,7 +64,15 @@ impl Xorshift64 {
     }
 }
 
-fn simulate_gbm_paths(s0: f64, r: f64, sigma: f64, t: f64, n_steps: usize, n_paths: usize, seed: u64) -> Vec<Vec<f64>> {
+fn simulate_gbm_paths(
+    s0: f64,
+    r: f64,
+    sigma: f64,
+    t: f64,
+    n_steps: usize,
+    n_paths: usize,
+    seed: u64,
+) -> Vec<Vec<f64>> {
     let dt = t / n_steps as f64;
     let drift = (r - 0.5 * sigma * sigma) * dt;
     let vol = sigma * dt.sqrt();
@@ -108,9 +116,7 @@ fn fit_polynomial(xs: &[f64], ys: &[f64], degree: usize) -> Vec<f64> {
 
     let mut m = vec![vec![0.0_f64; n_coef + 1]; n_coef];
     for row in 0..n_coef {
-        for col in 0..n_coef {
-            m[row][col] = power_sums[row + col];
-        }
+        m[row][..n_coef].copy_from_slice(&power_sums[row..(n_coef + row)]);
         m[row][n_coef] = rhs[row];
     }
 
@@ -135,7 +141,15 @@ fn fit_polynomial(xs: &[f64], ys: &[f64], degree: usize) -> Vec<f64> {
             }
         }
     }
-    (0..n_coef).map(|i| if m[i][i].abs() > 1e-14 { m[i][n_coef] / m[i][i] } else { 0.0 }).collect()
+    (0..n_coef)
+        .map(|i| {
+            if m[i][i].abs() > 1e-14 {
+                m[i][n_coef] / m[i][i]
+            } else {
+                0.0
+            }
+        })
+        .collect()
 }
 
 fn eval_polynomial(coeffs: &[f64], x: f64) -> f64 {
@@ -153,7 +167,12 @@ struct McResult {
     std_error: f64,
 }
 
-fn lsm_price(
+/// Bundled instead of loose scalars, clippy flagged the original 11-argument
+/// version of lsm_price (too_many_arguments), same complaint and same fix as
+/// bisect_maturity in effective_maturity.rs. from_ampo lets each call site only
+/// override what it actually varies, which is most of them, since s0/k/sigma
+/// come from the AmpoParams under test anyway.
+struct LsmConfig {
     s0: f64,
     k: f64,
     r_drift: f64,
@@ -165,28 +184,64 @@ fn lsm_price(
     n_paths: usize,
     seed: u64,
     degree: usize,
-) -> McResult {
-    let dt = t / n_steps as f64;
-    let discount_step = (-r_discount * dt).exp();
-    let paths = simulate_gbm_paths(s0, r_drift, sigma, t, n_steps, n_paths, seed);
+}
 
-    let payoff = |s: f64| if is_call { (s - k).max(0.0) } else { (k - s).max(0.0) };
+impl LsmConfig {
+    fn from_ampo(p: &AmpoParams, is_call: bool, t: f64, n_steps: usize, seed: u64) -> Self {
+        LsmConfig {
+            s0: p.s0,
+            k: p.k,
+            r_drift: p.r,
+            r_discount: p.r + p.q,
+            sigma: p.sigma,
+            t,
+            is_call,
+            n_steps,
+            n_paths: 60_000,
+            seed,
+            degree: 2,
+        }
+    }
+}
+
+fn lsm_price(cfg: &LsmConfig) -> McResult {
+    let dt = cfg.t / cfg.n_steps as f64;
+    let discount_step = (-cfg.r_discount * dt).exp();
+    let paths = simulate_gbm_paths(
+        cfg.s0,
+        cfg.r_drift,
+        cfg.sigma,
+        cfg.t,
+        cfg.n_steps,
+        cfg.n_paths,
+        cfg.seed,
+    );
+
+    let payoff = |s: f64| {
+        if cfg.is_call {
+            (s - cfg.k).max(0.0)
+        } else {
+            (cfg.k - s).max(0.0)
+        }
+    };
 
     let mut cashflow: Vec<f64> = paths.iter().map(|p| payoff(*p.last().unwrap())).collect();
 
-    for step in (1..n_steps).rev() {
+    for step in (1..cfg.n_steps).rev() {
         for cf in cashflow.iter_mut() {
             *cf *= discount_step;
         }
 
-        let itm_indices: Vec<usize> = (0..paths.len()).filter(|&i| payoff(paths[i][step]) > 0.0).collect();
-        if itm_indices.len() < 4 * (degree + 1) {
+        let itm_indices: Vec<usize> = (0..paths.len())
+            .filter(|&i| payoff(paths[i][step]) > 0.0)
+            .collect();
+        if itm_indices.len() < 4 * (cfg.degree + 1) {
             continue;
         }
 
         let xs: Vec<f64> = itm_indices.iter().map(|&i| paths[i][step]).collect();
         let ys: Vec<f64> = itm_indices.iter().map(|&i| cashflow[i]).collect();
-        let coeffs = fit_polynomial(&xs, &ys, degree);
+        let coeffs = fit_polynomial(&xs, &ys, cfg.degree);
 
         for &i in &itm_indices {
             let immediate = payoff(paths[i][step]);
@@ -202,17 +257,28 @@ fn lsm_price(
     }
 
     let mean: f64 = cashflow.iter().sum::<f64>() / cashflow.len() as f64;
-    let variance: f64 = cashflow.iter().map(|c| (c - mean).powi(2)).sum::<f64>() / (cashflow.len() - 1) as f64;
-    McResult { price: mean, std_error: (variance / cashflow.len() as f64).sqrt() }
+    let variance: f64 =
+        cashflow.iter().map(|c| (c - mean).powi(2)).sum::<f64>() / (cashflow.len() - 1) as f64;
+    McResult {
+        price: mean,
+        std_error: (variance / cashflow.len() as f64).sqrt(),
+    }
 }
 
 #[test]
 fn lsm_matches_closed_form_put() {
     // puts don't exhibit the call-side bias described in the module docs, pure
     // statistical tolerance is appropriate here.
-    let p = AmpoParams { s0: 100.0, k: 100.0, r: 0.05, sigma: 0.5, q: 0.3 };
+    let p = AmpoParams {
+        s0: 100.0,
+        k: 100.0,
+        r: 0.05,
+        sigma: 0.5,
+        q: 0.3,
+    };
     let closed_form = price_put(&p);
-    let result = lsm_price(p.s0, p.k, p.r, p.r + p.q, p.sigma, 10.0, false, 400, 60_000, 43, 2);
+    let cfg = LsmConfig::from_ampo(&p, false, 10.0, 400, 43);
+    let result = lsm_price(&cfg);
     let diff = (result.price - closed_form).abs();
     assert!(
         diff < 4.0 * result.std_error,
@@ -228,9 +294,16 @@ fn lsm_matches_closed_form_call_within_known_regression_bias() {
     // see module docs: confirmed ~3-7% low bias on calls, investigated across
     // discretization, basis degree, and horizon, none of which closes it. 8%
     // relative tolerance is the measured bias plus margin, not tuned to pass.
-    let p = AmpoParams { s0: 100.0, k: 100.0, r: 0.05, sigma: 0.5, q: 0.3 };
+    let p = AmpoParams {
+        s0: 100.0,
+        k: 100.0,
+        r: 0.05,
+        sigma: 0.5,
+        q: 0.3,
+    };
     let closed_form = price_call(&p);
-    let result = lsm_price(p.s0, p.k, p.r, p.r + p.q, p.sigma, 10.0, true, 400, 60_000, 42, 2);
+    let cfg = LsmConfig::from_ampo(&p, true, 10.0, 400, 42);
+    let result = lsm_price(&cfg);
     let relative_diff = (result.price - closed_form).abs() / closed_form;
     assert!(
         relative_diff < 0.08,
@@ -244,9 +317,16 @@ fn lsm_matches_closed_form_call_within_known_regression_bias() {
 
 #[test]
 fn lsm_matches_closed_form_out_of_the_money_call_within_known_regression_bias() {
-    let p = AmpoParams { s0: 70.0, k: 100.0, r: 0.05, sigma: 0.4, q: 0.2 };
+    let p = AmpoParams {
+        s0: 70.0,
+        k: 100.0,
+        r: 0.05,
+        sigma: 0.4,
+        q: 0.2,
+    };
     let closed_form = price_call(&p);
-    let result = lsm_price(p.s0, p.k, p.r, p.r + p.q, p.sigma, 10.0, true, 400, 60_000, 44, 2);
+    let cfg = LsmConfig::from_ampo(&p, true, 10.0, 400, 44);
+    let result = lsm_price(&cfg);
     let relative_diff = (result.price - closed_form).abs() / closed_form;
     assert!(
         relative_diff < 0.08,
@@ -265,32 +345,64 @@ fn lsm_matches_closed_form_out_of_the_money_call_within_known_regression_bias() 
 #[test]
 #[ignore]
 fn diagnostic_full_bias_investigation() {
-    let p = AmpoParams { s0: 100.0, k: 100.0, r: 0.05, sigma: 0.5, q: 0.3 };
+    let p = AmpoParams {
+        s0: 100.0,
+        k: 100.0,
+        r: 0.05,
+        sigma: 0.5,
+        q: 0.3,
+    };
     let closed_form = price_call(&p);
 
     println!("-- 1. time steps, bias should shrink if this were discretization error --");
     for &steps in &[200usize, 800, 2000] {
-        let result = lsm_price(p.s0, p.k, p.r, p.r + p.q, p.sigma, 10.0, true, steps, 40_000, 42, 2);
-        println!("steps={:5}  lsm={:.4}  diff={:.4}", steps, result.price, (closed_form - result.price).abs());
+        let cfg = LsmConfig::from_ampo(&p, true, 10.0, steps, 42);
+        let result = lsm_price(&cfg);
+        println!(
+            "steps={:5}  lsm={:.4}  diff={:.4}",
+            steps,
+            result.price,
+            (closed_form - result.price).abs()
+        );
     }
 
     println!("-- 2. regression degree, bias should shrink with more basis functions --");
     for degree in [2usize, 3, 4, 5] {
-        let result = lsm_price(p.s0, p.k, p.r, p.r + p.q, p.sigma, 10.0, true, 400, 60_000, 42, degree);
-        println!("degree={}  lsm={:.4}  diff={:.4}", degree, result.price, (closed_form - result.price).abs());
+        let mut cfg = LsmConfig::from_ampo(&p, true, 10.0, 400, 42);
+        cfg.degree = degree;
+        let result = lsm_price(&cfg);
+        println!(
+            "degree={}  lsm={:.4}  diff={:.4}",
+            degree,
+            result.price,
+            (closed_form - result.price).abs()
+        );
     }
 
     println!("-- 3. horizon, bias should shrink monotonically toward 0 if it were truncation --");
     for t in [10.0, 20.0, 40.0, 80.0] {
         let steps = (t * 40.0) as usize;
-        let result = lsm_price(p.s0, p.k, p.r, p.r + p.q, p.sigma, t, true, steps, 30_000, 42, 2);
-        println!("T={:>5.1}  lsm={:.4}  diff={:.4}", t, result.price, (closed_form - result.price).abs());
+        let mut cfg = LsmConfig::from_ampo(&p, true, t, steps, 42);
+        cfg.n_paths = 30_000;
+        let result = lsm_price(&cfg);
+        println!(
+            "T={:>5.1}  lsm={:.4}  diff={:.4}",
+            t,
+            result.price,
+            (closed_form - result.price).abs()
+        );
     }
 
     println!("-- isolation: European-only (no exercise decision), should match ~3.3515 --");
     let paths = simulate_gbm_paths(p.s0, p.r, p.sigma, 10.0, 400, 200_000, 99);
     let discount = (-(p.r + p.q) * 10.0).exp();
-    let payoffs: Vec<f64> = paths.iter().map(|path| (path.last().unwrap() - p.k).max(0.0) * discount).collect();
+    let payoffs: Vec<f64> = paths
+        .iter()
+        .map(|path| (path.last().unwrap() - p.k).max(0.0) * discount)
+        .collect();
     let mean: f64 = payoffs.iter().sum::<f64>() / payoffs.len() as f64;
-    println!("simulated European call = {:.4} (independent python reference: 3.3515)", mean);
+    println!(
+        "simulated European call = {:.4} (independent python reference: 3.3515)",
+        mean
+    );
 }
