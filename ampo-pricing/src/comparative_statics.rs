@@ -41,15 +41,22 @@ mod tests {
     use approx::assert_relative_eq;
 
     fn params(q: f64) -> AmpoParams {
-        AmpoParams { s0: 90.0, k: 100.0, r: 0.05, sigma: 0.5, q }
+        AmpoParams {
+            s0: 90.0,
+            k: 100.0,
+            r: 0.05,
+            sigma: 0.5,
+            q,
+        }
     }
 
     #[test]
     fn call_boundary_derivative_matches_finite_difference() {
         let q0 = 0.5;
         let dq = 1e-6;
-        let numerical =
-            (exercise_boundary_call(&params(q0 + dq)) - exercise_boundary_call(&params(q0 - dq))) / (2.0 * dq);
+        let numerical = (exercise_boundary_call(&params(q0 + dq))
+            - exercise_boundary_call(&params(q0 - dq)))
+            / (2.0 * dq);
         assert_relative_eq!(numerical, dboundary_dq_call(&params(q0)), epsilon = 1e-4);
     }
 
@@ -57,8 +64,9 @@ mod tests {
     fn put_boundary_derivative_matches_finite_difference() {
         let q0 = 0.5;
         let dq = 1e-6;
-        let numerical =
-            (exercise_boundary_put(&params(q0 + dq)) - exercise_boundary_put(&params(q0 - dq))) / (2.0 * dq);
+        let numerical = (exercise_boundary_put(&params(q0 + dq))
+            - exercise_boundary_put(&params(q0 - dq)))
+            / (2.0 * dq);
         assert_relative_eq!(numerical, dboundary_dq_put(&params(q0)), epsilon = 1e-4);
     }
 
