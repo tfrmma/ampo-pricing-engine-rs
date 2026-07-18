@@ -13,9 +13,21 @@ use crate::black_scholes::AmpoParams;
 /// CRR binomial tree, American exercise, no dividends. steps=500 is overkill for the
 /// precision we need here (this isn't a production pricer, it's a reference point
 /// for effective_maturity) but binomial trees are cheap enough that it doesn't matter.
-pub fn american_option_price(s0: f64, k: f64, r: f64, sigma: f64, t: f64, is_call: bool, steps: usize) -> f64 {
+pub fn american_option_price(
+    s0: f64,
+    k: f64,
+    r: f64,
+    sigma: f64,
+    t: f64,
+    is_call: bool,
+    steps: usize,
+) -> f64 {
     if t <= 0.0 {
-        return if is_call { (s0 - k).max(0.0) } else { (k - s0).max(0.0) };
+        return if is_call {
+            (s0 - k).max(0.0)
+        } else {
+            (k - s0).max(0.0)
+        };
     }
     let dt = t / steps as f64;
     let u = (sigma * dt.sqrt()).exp();
@@ -27,7 +39,11 @@ pub fn american_option_price(s0: f64, k: f64, r: f64, sigma: f64, t: f64, is_cal
     let mut values: Vec<f64> = (0..=steps)
         .map(|i| {
             let s_t = s0 * u.powi(i as i32) * d.powi((steps - i) as i32);
-            if is_call { (s_t - k).max(0.0) } else { (k - s_t).max(0.0) }
+            if is_call {
+                (s_t - k).max(0.0)
+            } else {
+                (k - s_t).max(0.0)
+            }
         })
         .collect();
 
@@ -36,7 +52,11 @@ pub fn american_option_price(s0: f64, k: f64, r: f64, sigma: f64, t: f64, is_cal
         for i in 0..=step {
             let s_node = s0 * u.powi(i as i32) * d.powi((step - i) as i32);
             let continuation = disc * (p_up * values[i + 1] + (1.0 - p_up) * values[i]);
-            let intrinsic = if is_call { (s_node - k).max(0.0) } else { (k - s_node).max(0.0) };
+            let intrinsic = if is_call {
+                (s_node - k).max(0.0)
+            } else {
+                (k - s_node).max(0.0)
+            };
             values[i] = continuation.max(intrinsic);
         }
     }
@@ -47,38 +67,66 @@ pub fn american_option_price(s0: f64, k: f64, r: f64, sigma: f64, t: f64, is_cal
 /// Only defined for q > 0 and t_max large enough that american_option_price(t_max)
 /// exceeds the AmPO value, panics otherwise rather than returning a garbage bound.
 pub fn effective_maturity_call(p: &AmpoParams, t_max: f64, steps: usize, tol: f64) -> f64 {
-    let target = crate::black_scholes::price_call(p);
-    bisect_maturity(p.s0, p.k, p.r, p.sigma, true, target, t_max, steps, tol)
+    let target = MaturityTarget {
+        s0: p.s0,
+        k: p.k,
+        r: p.r,
+        sigma: p.sigma,
+        is_call: true,
+        price: crate::black_scholes::price_call(p),
+    };
+    bisect_maturity(&target, t_max, steps, tol)
 }
 
 pub fn effective_maturity_put(p: &AmpoParams, t_max: f64, steps: usize, tol: f64) -> f64 {
-    let target = crate::black_scholes::price_put(p);
-    bisect_maturity(p.s0, p.k, p.r, p.sigma, false, target, t_max, steps, tol)
+    let target = MaturityTarget {
+        s0: p.s0,
+        k: p.k,
+        r: p.r,
+        sigma: p.sigma,
+        is_call: false,
+        price: crate::black_scholes::price_put(p),
+    };
+    bisect_maturity(&target, t_max, steps, tol)
 }
 
-fn bisect_maturity(
+/// What we're searching for a maturity match against: the AmPO's own market
+/// params plus its already-computed closed-form price. Bundled into a struct
+/// instead of passed as loose scalars, clippy flagged the previous 9-argument
+/// version (too_many_arguments), and it was a fair complaint, the loose-scalar
+/// version was already easy to mix up an argument order in.
+struct MaturityTarget {
     s0: f64,
     k: f64,
     r: f64,
     sigma: f64,
     is_call: bool,
-    target: f64,
-    t_max: f64,
-    steps: usize,
-    tol: f64,
-) -> f64 {
-    let price_at = |t: f64| american_option_price(s0, k, r, sigma, t, is_call, steps);
+    price: f64,
+}
+
+fn bisect_maturity(target: &MaturityTarget, t_max: f64, steps: usize, tol: f64) -> f64 {
+    let price_at = |t: f64| {
+        american_option_price(
+            target.s0,
+            target.k,
+            target.r,
+            target.sigma,
+            t,
+            target.is_call,
+            steps,
+        )
+    };
     let mut lo = 0.0;
     let mut hi = t_max;
     assert!(
-        price_at(hi) >= target,
+        price_at(hi) >= target.price,
         "t_max too small, dated option at t_max ({}) doesn't reach the AmPO target ({})",
         price_at(hi),
-        target
+        target.price
     );
     while hi - lo > tol {
         let mid = (lo + hi) / 2.0;
-        if price_at(mid) < target {
+        if price_at(mid) < target.price {
             lo = mid;
         } else {
             hi = mid;
@@ -138,7 +186,13 @@ mod tests {
 
     #[test]
     fn effective_maturity_recovers_a_price_match_for_call() {
-        let p = AmpoParams { s0: 100.0, k: 100.0, r: 0.05, sigma: 0.5, q: 0.3 };
+        let p = AmpoParams {
+            s0: 100.0,
+            k: 100.0,
+            r: 0.05,
+            sigma: 0.5,
+            q: 0.3,
+        };
         let ampo_price = price_call(&p);
         let t_eff = effective_maturity_call(&p, 50.0, 500, 1e-3);
         let dated_price = american_option_price(p.s0, p.k, p.r, p.sigma, t_eff, true, 500);
@@ -147,7 +201,13 @@ mod tests {
 
     #[test]
     fn effective_maturity_recovers_a_price_match_for_put() {
-        let p = AmpoParams { s0: 100.0, k: 100.0, r: 0.05, sigma: 0.5, q: 0.3 };
+        let p = AmpoParams {
+            s0: 100.0,
+            k: 100.0,
+            r: 0.05,
+            sigma: 0.5,
+            q: 0.3,
+        };
         let ampo_price = price_put(&p);
         let t_eff = effective_maturity_put(&p, 50.0, 500, 1e-3);
         let dated_price = american_option_price(p.s0, p.k, p.r, p.sigma, t_eff, false, 500);
