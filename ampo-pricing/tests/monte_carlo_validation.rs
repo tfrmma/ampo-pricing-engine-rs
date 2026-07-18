@@ -26,6 +26,7 @@
 //!      the perpetuity as the cause). Shrinking T below ~3y makes it much worse
 //!      (up to 21% at T=1.5), because that actually does truncate real exercise
 //!      value, a different and expected effect, not the bias in question.
+//!
 //! A parallel isolated check confirms path simulation + discounting themselves are
 //! correct (European-only pricing, no exercise decision, matches the independently
 //! computed dividend-adjusted BS reference to within MC noise). So the bias lives
