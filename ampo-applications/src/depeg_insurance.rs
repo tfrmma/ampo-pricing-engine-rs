@@ -9,15 +9,19 @@
 //! market mechanism applied to K=1 puts. Resist the urge to add pricing logic in
 //! this file, ampo-pricing already owns that.
 
+use ampo_core::market::MarketState;
 use ampo_core::payoff::{AmpoContract, OptionType, Settlement};
 use ampo_core::premium_curve::PremiumFunction;
-use ampo_core::market::MarketState;
 
 /// A de-peg insurance market is just a put AmPO struck at parity. K need not be
 /// exactly 1.0 in principle (e.g. insuring against a small permanent de-peg band),
 /// but 1.0 is the canonical PSM-equivalent case from the paper.
 pub fn psm_put_contract(q: f64) -> AmpoContract {
-    AmpoContract { option_type: OptionType::Put, k: 1.0, q }
+    AmpoContract {
+        option_type: OptionType::Put,
+        k: 1.0,
+        q,
+    }
 }
 
 /// Converting `stablecoin_amount` units of the pegged asset into the reserve asset
@@ -34,7 +38,10 @@ pub fn convert_via_exercise(contract: &AmpoContract, stablecoin_amount: f64) -> 
 /// This is the paper's on-chain, oracle-free signal of implied de-peg risk, rising
 /// as underwriting collateral gets scarcer relative to insurance demand.
 pub fn fear_index(curve: &impl PremiumFunction, state: MarketState) -> f64 {
-    debug_assert!(state.c > 0.0, "fear index undefined with no underwriting collateral");
+    debug_assert!(
+        state.c > 0.0,
+        "fear index undefined with no underwriting collateral"
+    );
     curve.premium(state.x / state.c)
 }
 
@@ -65,7 +72,13 @@ mod tests {
     fn fear_index_rises_with_utilization() {
         let curve = PutPremiumCurve { k: 1.0 };
         let calm = fear_index(&curve, MarketState { x: 10.0, c: 1000.0 });
-        let stressed = fear_index(&curve, MarketState { x: 900.0, c: 1000.0 });
+        let stressed = fear_index(
+            &curve,
+            MarketState {
+                x: 900.0,
+                c: 1000.0,
+            },
+        );
         assert!(stressed > calm);
     }
 
@@ -75,7 +88,13 @@ mod tests {
         // can spike but never exceeds parity value, unlike the call side which
         // diverges to infinity.
         let curve = PutPremiumCurve { k: 1.0 };
-        let near_full = fear_index(&curve, MarketState { x: 999.0, c: 1000.0 });
+        let near_full = fear_index(
+            &curve,
+            MarketState {
+                x: 999.0,
+                c: 1000.0,
+            },
+        );
         assert!(near_full <= 1.0);
     }
 }
